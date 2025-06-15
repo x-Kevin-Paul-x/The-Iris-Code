@@ -1,0 +1,49 @@
+# Git
+.git
+.gitignore
+
+# Python virtual environment
+.venv
+venv/
+env/
+ENV/
+
+# Python bytecode and cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE and editor specific files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# Logs (if any are generated locally and not meant for the image)
+*.log
+app.log 
+
+# Data and models (if they are very large and mounted as volumes in production)
+# For this project, we COPY them in, so they are not ignored by default.
+# If you decide to mount them instead of copying, uncomment below:
+# data/
+# models/
+
+# Test files (if not needed in the final image)
+# tests/
+# *.test.py
+
+# Docker specific files (like this one)
+Dockerfile
+.dockerignore

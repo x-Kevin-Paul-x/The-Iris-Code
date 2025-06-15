@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iris Species Predictor - Advanced</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Chart.js for visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .container {
+            margin-top: 30px;
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #0056b3;
+            margin-bottom: 25px;
+        }
+        .form-label {
+            font-weight: bold;
+        }
+        #predictionResultArea {
+            margin-top: 25px;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .alert-success-custom {
+            background-color: #d1e7dd;
+            border-color: #badbcc;
+            color: #0f5132;
+        }
+        .alert-danger-custom {
+            background-color: #f8d7da;
+            border-color: #f5c2c7;
+            color: #842029;
+        }
+        .alert-warning-custom { /* Style for input warnings */
+            background-color: #fff3cd;
+            border-color: #ffeeba;
+            color: #856404;
+        }
+        .confidence-score {
+            font-size: 0.9em;
+            color: #555;
+        }
+        #featureImportanceChart, #inputVisualizationChart {
+            margin-top: 20px;
+            max-height: 350px; /* Control chart height */
+        }
+        footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #dee2e6;
+            font-size: 0.9em;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container col-lg-6 col-md-8 col-sm-10">
+        <h1 class="text-center">Iris Flower Species Predictor</h1>
+        <form id="predictionForm">
+            <div class="row g-3">
+                {% for feature in feature_names %}
+                <div class="col-md-6">
+                    <label for="{{ feature }}" class="form-label">{{ feature.replace('_', ' ').title() }}:</label>
+                    <input type="number" class="form-control" id="{{ feature }}" name="{{ feature }}" step="0.1" required placeholder="e.g. 5.1">
+                </div>
+                {% endfor %}
+            </div>
+            <div class="row mt-4">
+                <div class="col-6 d-grid">
+                    <button type="submit" class="btn btn-primary btn-lg">Predict Species</button>
+                </div>
+                <div class="col-6 d-grid">
+                    <button type="button" class="btn btn-outline-secondary btn-lg" id="randomizeButton">Randomize Inputs</button>
+                </div>
+            </div>
+        </form>
+
+        <div id="predictionResultArea" class="alert" role="alert" style="display: none;">
+            <!-- Prediction will be displayed here -->
+        </div>
+
+        <div id="inputWarningsArea" class="mt-3">
+            <!-- Input warnings will be displayed here -->
+        </div>
+        
+        <div class="row mt-4">
+            <div class="col-md-6">
+                <h5 class="text-center">Feature Importance</h5>
+                <canvas id="featureImportanceChart"></canvas>
+            </div>
+            <div class="col-md-6">
+                <h5 class="text-center">Input Visualization</h5>
+                 <div class="mb-2">
+                    <label for="x_axis_feature" class="form-label form-label-sm">X-axis:</label>
+                    <select id="x_axis_feature" class="form-select form-select-sm">
+                        {% for feature in feature_names %}
+                        <option value="{{ feature }}" {% if loop.index0 == 2 %}selected{% endif %}>{{ feature.replace('_', ' ').title() }}</option>
+                        {% endfor %}
+                    </select>
+                    <label for="y_axis_feature" class="form-label form-label-sm mt-1">Y-axis:</label>
+                    <select id="y_axis_feature" class="form-select form-select-sm">
+                         {% for feature in feature_names %}
+                        <option value="{{ feature }}" {% if loop.index0 == 3 %}selected{% endif %}>{{ feature.replace('_', ' ').title() }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <canvas id="inputVisualizationChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <footer class="text-center">
+        <p>&copy; Iris ML Project 2025. Enhanced Edition.</p>
+    </footer>
+
+    <!-- Bootstrap JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let featureImportanceChartInstance = null;
+        let inputVisualizationChartInstance = null;
+        const featureNames = JSON.parse('{{ feature_names | default([]) | tojson | safe }}');
+        // Parse feature_stats from the backend. Handle cases where it might be an empty string or not valid JSON.
+        let featureStats = {};
+        try {
+            const featureStatsRaw = '{{ feature_stats_json | safe }}';
+            if (featureStatsRaw) {
+                featureStats = JSON.parse(featureStatsRaw);
+            }
+        } catch (e) {
+            console.error("Error parsing feature_stats_json:", e);
+            featureStats = {}; // Fallback to empty object on error
+        }
+
+        function updateFeatureImportanceChart(importances) {
+            const canvasElement = document.getElementById('featureImportanceChart');
+            if (!canvasElement) return;
+            const ctx = canvasElement.getContext('2d');
+
+            if (featureImportanceChartInstance) {
+                featureImportanceChartInstance.destroy();
+                featureImportanceChartInstance = null;
+            }
+
+            if (importances && Object.keys(importances).length > 0) {
+                featureImportanceChartInstance = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: Object.keys(importances),
+                        datasets: [{
+                            label: 'Feature Importance',
+                            data: Object.values(importances),
+                            backgroundColor: 'rgba(0, 123, 255, 0.5)',
+                            borderColor: 'rgba(0, 123, 255, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        }
+                    }
+                });
+                canvasElement.style.display = 'block';
+            } else {
+                canvasElement.style.display = 'none';
+            }
+        }
+
+        function updateInputVisualizationChart(userInput, trainingData, selectedXFeature, selectedYFeature) {
+            const canvasElement = document.getElementById('inputVisualizationChart');
+            if (!canvasElement) return;
+            const ctx = canvasElement.getContext('2d');
+
+            if (inputVisualizationChartInstance) {
+                inputVisualizationChartInstance.destroy();
+                inputVisualizationChartInstance = null;
+            }
+
+            if (!trainingData || !trainingData.datasets || trainingData.datasets.length === 0) {
+                canvasElement.style.display = 'none';
+                return;
+            }
+            canvasElement.style.display = 'block';
+
+            const xFeatureIndex = featureNames.indexOf(selectedXFeature);
+            const yFeatureIndex = featureNames.indexOf(selectedYFeature);
+
+            if (xFeatureIndex === -1 || yFeatureIndex === -1) {
+                console.error("Selected features for visualization not found in featureNames.");
+                canvasElement.style.display = 'none';
+                return;
+            }
+            
+            const datasets = trainingData.datasets.map(ds => ({
+                label: ds.label,
+                data: ds.data.map(point => ({ x: point[xFeatureIndex], y: point[yFeatureIndex] })),
+                backgroundColor: ds.backgroundColor,
+                borderColor: ds.borderColor,
+                pointRadius: 3,
+                pointHoverRadius: 5
+            }));
+
+            if (userInput && userInput.length === featureNames.length) {
+                 datasets.push({
+                    label: 'Your Input',
+                    data: [{ x: userInput[xFeatureIndex], y: userInput[yFeatureIndex] }],
+                    backgroundColor: 'rgba(255, 0, 0, 1)',
+                    borderColor: 'rgba(150, 0, 0, 1)',
+                    pointRadius: 7,
+                    pointHoverRadius: 10,
+                    pointStyle: 'star'
+                });
+            }
+
+            inputVisualizationChartInstance = new Chart(ctx, {
+                type: 'scatter',
+                data: { datasets: datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { title: { display: true, text: document.getElementById('x_axis_feature').selectedOptions[0].text } },
+                        y: { title: { display: true, text: document.getElementById('y_axis_feature').selectedOptions[0].text } }
+                    },
+                    plugins: {
+                        legend: { position: 'top' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) { label += ': '; }
+                                    if (context.parsed.x !== null && context.parsed.y !== null) {
+                                        label += `(${context.parsed.x.toFixed(2)}, ${context.parsed.y.toFixed(2)})`;
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        document.getElementById('predictionForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            
+            const formData = new FormData(this);
+            const resultDiv = document.getElementById('predictionResultArea');
+            const warningsDiv = document.getElementById('inputWarningsArea');
+
+            resultDiv.innerHTML = 'Predicting...';
+            resultDiv.className = 'alert alert-info';
+            resultDiv.style.display = 'block';
+            resultDiv._predictionData = null; 
+            
+            if(warningsDiv) warningsDiv.innerHTML = ''; // Clear previous warnings
+
+            updateFeatureImportanceChart(null);
+
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+
+                if (response.ok) {
+                    // Display input warnings if any
+                    if (result.input_warnings && result.input_warnings.length > 0 && warningsDiv) {
+                        let warningsHtml = '<h5>Input Data Notes:</h5><ul class="list-group">';
+                        result.input_warnings.forEach(warning => {
+                            warningsHtml += `<li class="list-group-item list-group-item-warning">${warning}</li>`;
+                        });
+                        warningsHtml += '</ul>';
+                        warningsDiv.innerHTML = warningsHtml;
+                    }
+
+                    if (result.prediction) {
+                        let htmlContent = `<strong>Predicted Species: ${result.prediction}</strong>`;
+                        if (result.confidence) {
+                            htmlContent += `<br><span class="confidence-score">Confidence: ${(result.confidence * 100).toFixed(2)}%</span>`;
+                        }
+                        resultDiv.innerHTML = htmlContent;
+                        resultDiv.className = 'alert alert-success-custom';
+                        resultDiv._predictionData = result; 
+                        
+                        if (result.feature_importances) {
+                            updateFeatureImportanceChart(result.feature_importances);
+                        }
+                        if (result.input_features && result.training_data_sample) {
+                             updateInputVisualizationChart(
+                                result.input_features, 
+                                result.training_data_sample,
+                                document.getElementById('x_axis_feature').value,
+                                document.getElementById('y_axis_feature').value
+                            );
+                        } else {
+                            const visChartCanvas = document.getElementById('inputVisualizationChart');
+                            if (visChartCanvas) visChartCanvas.style.display = 'none';
+                        }
+                    } else if (result.error) {
+                         resultDiv.innerHTML = `<strong>Error:</strong> ${result.error}`;
+                         resultDiv.className = 'alert alert-danger-custom';
+                    } else {
+                        resultDiv.innerHTML = '<strong>Error:</strong> Unexpected response from server.';
+                        resultDiv.className = 'alert alert-danger-custom';
+                    }
+                } else {
+                    resultDiv.innerHTML = `<strong>Error:</strong> ${result.error || response.statusText || 'Server error'}`;
+                    resultDiv.className = 'alert alert-danger-custom';
+                }
+            } catch (error) {
+                console.error('Error during prediction:', error);
+                resultDiv.innerHTML = '<strong>Error:</strong> An error occurred. Please check console and try again.';
+                resultDiv.className = 'alert alert-danger-custom';
+            }
+        });
+
+        function handleAxisChange() {
+            const resultDiv = document.getElementById('predictionResultArea');
+            const currentPredictionData = resultDiv._predictionData;
+            if (currentPredictionData && currentPredictionData.input_features && currentPredictionData.training_data_sample) {
+                 updateInputVisualizationChart(
+                    currentPredictionData.input_features, 
+                    currentPredictionData.training_data_sample,
+                    document.getElementById('x_axis_feature').value,
+                    document.getElementById('y_axis_feature').value
+                );
+            }
+        }
+
+        document.getElementById('x_axis_feature').addEventListener('change', handleAxisChange);
+        document.getElementById('y_axis_feature').addEventListener('change', handleAxisChange);
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const fiChartCanvas = document.getElementById('featureImportanceChart');
+            if (fiChartCanvas && (!featureImportanceChartInstance || featureImportanceChartInstance.data.datasets.length === 0)) {
+                 fiChartCanvas.style.display = 'none';
+            }
+            const ivChartCanvas = document.getElementById('inputVisualizationChart');
+            if (ivChartCanvas && (!inputVisualizationChartInstance || inputVisualizationChartInstance.data.datasets.length === 0)) {
+                 ivChartCanvas.style.display = 'none';
+            }
+        });
+
+        document.getElementById('randomizeButton').addEventListener('click', function() {
+            featureNames.forEach(featureName => {
+                const inputElement = document.getElementById(featureName);
+                if (inputElement) {
+                    let minVal = 0.1;
+                    let maxVal = 10.0; // Default broad range
+
+                    if (featureStats && featureStats[featureName] && 
+                        typeof featureStats[featureName].min === 'number' && 
+                        typeof featureStats[featureName].max === 'number') {
+                        
+                        // Use min/max from training data to ensure values are not extreme outliers
+                        // We can also use mean +/- 2*std for a tighter, more "typical" range
+                        // For simplicity here, we'll use a range slightly wider than min/max to allow some variation
+                        // but still constrained by observed data.
+                        // Or, more simply, just use min and max directly.
+                        minVal = featureStats[featureName].min;
+                        maxVal = featureStats[featureName].max;
+                        
+                        // If min and max are too close or equal, provide a small sensible range
+                        if (maxVal <= minVal) {
+                            maxVal = minVal + 1.0; // Ensure max is greater than min
+                        }
+                    } else {
+                        // Fallback if specific stats are missing for a feature
+                        console.warn(`No specific min/max stats for ${featureName}, using default range [${minVal}-${maxVal}].`);
+                    }
+                    
+                    // Generate a random number within the determined range
+                    let randomValue = Math.random() * (maxVal - minVal) + minVal;
+                    
+                    // Format to one decimal place, as per existing input fields
+                    inputElement.value = randomValue.toFixed(1);
+                }
+            });
+            // Clear previous results when randomizing
+            const resultDiv = document.getElementById('predictionResultArea');
+            const warningsDiv = document.getElementById('inputWarningsArea');
+            if (resultDiv) {
+                resultDiv.style.display = 'none';
+                resultDiv.innerHTML = '';
+                resultDiv._predictionData = null;
+            }
+            if (warningsDiv) warningsDiv.innerHTML = '';
+            updateFeatureImportanceChart(null);
+            const visChartCanvas = document.getElementById('inputVisualizationChart');
+            if (visChartCanvas) visChartCanvas.style.display = 'none';
+            if (inputVisualizationChartInstance) {
+                inputVisualizationChartInstance.destroy();
+                inputVisualizationChartInstance = null;
+            }
+        });
+    </script>
+</body>
+</html>
