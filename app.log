@@ -170,3 +170,6 @@ NameError: name 'FEATURE_NAMES' is not defined
 2025-06-16 00:44:35,898 - __main__ - INFO - Prediction requested by 127.0.0.1 with form data: {'sepal length (cm)': '4.8', 'sepal width (cm)': '3.9', 'petal length (cm)': '4.9', 'petal width (cm)': '1.2'}
 2025-06-16 00:44:35,916 - __main__ - INFO - Prediction successful for 127.0.0.1: Input=[4.8, 3.9, 4.9, 1.2], Predicted='versicolor', Confidence=0.7381
 2025-06-16 00:44:35,917 - werkzeug - INFO - 127.0.0.1 - - [16/Jun/2025 00:44:35] "POST /predict HTTP/1.1" 200 -
+2025-06-16 00:49:03,786 - __main__ - INFO - Prediction requested by 127.0.0.1 with form data: {'sepal length (cm)': '5.2', 'sepal width (cm)': '2.4', 'petal length (cm)': '3.3', 'petal width (cm)': '1.0'}
+2025-06-16 00:49:03,802 - __main__ - INFO - Prediction successful for 127.0.0.1: Input=[5.2, 2.4, 3.3, 1.0], Predicted='versicolor', Confidence=0.9380
+2025-06-16 00:49:03,803 - werkzeug - INFO - 127.0.0.1 - - [16/Jun/2025 00:49:03] "POST /predict HTTP/1.1" 200 -
